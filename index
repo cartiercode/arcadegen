@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Galaga Replica</title>
+    <style>
+        body {
+            margin: 0;
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            overflow: hidden;
+        }
+        canvas {
+            background: #000;
+            border: 1px solid #fff;
+            image-rendering: pixelated;
+            width: 100%;
+            max-width: 800px;
+            height: 80vh;
+            max-height: 600px;
+        }
+        #controls {
+            display: flex;
+            justify-content: space-around;
+            width: 100%;
+            max-width: 800px;
+            margin-top: 10px;
+        }
+        button {
+            padding: 10px;
+            font-size: 16px;
+            background: #333;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+        }
+        #score, #lives {
+            color: #fff;
+            font-family: Arial;
+            position: absolute;
+            top: 10px;
+        }
+        #score { left: 10px; }
+        #lives { right: 10px; }
+    </style>
+</head>
+<body>
+    <div id="score">Score: 0</div>
+    <div id="lives">Lives: 3</div>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div id="controls">
+        <button id="leftBtn">Left</button>
+        <button id="shootBtn">Shoot</button>
+        <button id="rightBtn">Right</button>
+    </div>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+
+        const scale = 2;
+        const player = { x: 374, y: 540, width: 16 * scale, height: 8 * scale, speed: 4, lives: 3 };
+        const bullets = [];
+        const enemies = [];
+        let score = 0, gameOver = false, frameCount = 0;
+
+        // Player sprite (simple ship)
+        const playerSprite = [
+            [0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0],
+            [0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0],
+            [0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0],
+            [0,0,0,0,1,1,1,0,0,1,1,1,0,0,0,0],
+            [0,0,0,1,1,1,1,0,0,1,1,1,1,0,0,0],
+            [0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,0],
+            [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0],
+            [0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0]
+        ];
+
+        // Enemy sprite (Galaga-style bug)
+        const enemySprite = [
+            [
+                [0,0,0,1,0,0,0,0,1,0,0,0],
+                [0,0,1,1,1,0,0,1,1,1,0,0],
+                [0,1,1,1,1,1,1,1,1,1,1,0],
+                [1,1,1,1,1,1,1,1,1,1,1,1],
+                [1,1,1,1,1,1,1,1,1,1,1,1],
+                [1,0,1,1,1,1,1,1,1,1,0,1],
+                [0,0,0,1,0,0,0,0,1,0,0,0],
+                [0,0,1,0,0,0,0,0,0,1,0,0]
+            ],
+            [
+                [0,0,0,0,1,0,0,1,0,0,0,0],
+                [0,0,0,1,1,1,1,1,1,0,0,0],
+                [0,0,1,1,1,1,1,1,1,1,0,0],
+                [0,1,1,1,1,1,1,1,1,1,1,0],
+                [1,1,1,1,1,1,1,1,1,1,1,1],
+                [1,1,1,1,1,1,1,1,1,1,1,1],
+                [0,0,1,0,0,0,0,0,0,1,0,0],
+                [0,1,0,0,0,0,0,0,0,0,1,0]
+            ]
+        ];
+
+        // Spawn enemies in formation
+        function spawnEnemies() {
+            for (let row = 0; row < 4; row++) {
+                for (let col = 0; col < 8; col++) {
+                    enemies.push({
+                        x: 200 + col * 48,
+                        y: 80 + row * 40,
+                        width: 12 * scale,
+                        height: 8 * scale,
+                        alive: true,
+                        frame: 0,
+                        state: 'formation', // 'formation', 'swooping', or 'returning'
+                        swoopTargetX: 0,
+                        swoopTargetY: 0,
+                        speed: 2
+                    });
+                }
+            }
+        }
+        spawnEnemies();
+
+        let keys = {};
+        document.addEventListener('keydown', e => {
+            keys[e.key] = true;
+            if (e.key === ' ' && !gameOver) shoot();
+        });
+        document.addEventListener('keyup', e => delete keys[e.key]);
+
+        // Mobile controls
+        const leftBtn = document.getElementById('leftBtn');
+        const rightBtn = document.getElementById('rightBtn');
+        const shootBtn = document.getElementById('shootBtn');
+        leftBtn.addEventListener('touchstart', e => { e.preventDefault(); keys['ArrowLeft'] = true; });
+        leftBtn.addEventListener('touchend', e => { e.preventDefault(); delete keys['ArrowLeft']; });
+        rightBtn.addEventListener('touchstart', e => { e.preventDefault(); keys['ArrowRight'] = true; });
+        rightBtn.addEventListener('touchend', e => { e.preventDefault(); delete keys['ArrowRight']; });
+        shootBtn.addEventListener('touchstart', e => { e.preventDefault(); shoot(); });
+
+        function shoot() {
+            bullets.push({
+                x: player.x + player.width / 2 - 2,
+                y: player.y,
+                width: 3 * scale,
+                height: 8 * scale,
+                speed: -6,
+                player: true
+            });
+        }
+
+        function update() {
+            if (gameOver) return;
+
+            frameCount++;
+
+            // Player movement
+            if (keys['ArrowLeft'] && player.x > 0) player.x -= player.speed;
+            if (keys['ArrowRight'] && player.x + player.width < 800) player.x += player.speed;
+
+            // Bullets
+            bullets.forEach((b, i) => {
+                b.y += b.speed;
+                if (b.y < 0 || b.y > 600) bullets.splice(i, 1);
+            });
+
+            // Enemy movement and swooping
+            let aliveEnemies = enemies.filter(e => e.alive);
+            if (frameCount % 60 === 0) {
+                aliveEnemies.forEach((e, i) => {
+                    if (e.state === 'formation' && Math.random() < 0.05) {
+                        e.state = 'swooping';
+                        e.swoopTargetX = player.x + Math.random() * 100 - 50;
+                        e.swoopTargetY = 500;
+                    }
+                });
+            }
+
+            enemies.forEach(e => {
+                if (!e.alive) return;
+                if (e.state === 'formation') {
+                    e.frame = (frameCount % 20 < 10) ? 0 : 1;
+                } else if (e.state === 'swooping') {
+                    let dx = e.swoopTargetX - e.x;
+                    let dy = e.swoopTargetY - e.y;
+                    let dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist > e.speed) {
+                        e.x += (dx / dist) * e.speed;
+                        e.y += (dy / dist) * e.speed;
+                    } else {
+                        e.state = 'returning';
+                        e.swoopTargetX = 200 + Math.floor((e.x - 200) / 48) * 48;
+                        e.swoopTargetY = 80 + Math.floor((e.y - 80) / 40) * 40;
+                    }
+                    e.frame = (frameCount % 10 < 5) ? 0 : 1;
+                } else if (e.state === 'returning') {
+                    let dx = e.swoopTargetX - e.x;
+                    let dy = e.swoopTargetY - e.y;
+                    let dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist > e.speed) {
+                        e.x += (dx / dist) * e.speed;
+                        e.y += (dy / dist) * e.speed;
+                    } else {
+                        e.x = e.swoopTargetX;
+                        e.y = e.swoopTargetY;
+                        e.state = 'formation';
+                    }
+                }
+
+                // Enemy collision with player
+                if (e.y + e.height > player.y && e.x < player.x + player.width && e.x + e.width > player.x) {
+                    player.lives--;
+                    e.alive = false;
+                    if (player.lives <= 0) gameOver = true;
+                }
+            });
+
+            // Bullet collisions
+            bullets.forEach((b, bi) => {
+                enemies.forEach((e, ei) => {
+                    if (e.alive && b.player && b.x < e.x + e.width && b.x + b.width > e.x && b.y < e.y + e.height && b.y + b.height > e.y) {
+                        e.alive = false;
+                        bullets.splice(bi, 1);
+                        score += 50;
+                    }
+                });
+            });
+
+            if (aliveEnemies.length === 0) {
+                spawnEnemies();
+            } else if (gameOver) {
+                endGame();
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, 800, 600);
+
+            // Player
+            drawSprite(ctx, playerSprite, player.x, player.y, scale, '#fff');
+
+            // Bullets
+            ctx.fillStyle = '#fff';
+            bullets.forEach(b => ctx.fillRect(b.x, b.y, b.width, b.height));
+
+            // Enemies
+            enemies.forEach(e => {
+                if (e.alive) drawSprite(ctx, enemySprite[e.frame], e.x, e.y, scale, '#0f0');
+            });
+
+            // UI
+            document.getElementById('score').innerText = 'Score: ' + score;
+            document.getElementById('lives').innerText = 'Lives: ' + player.lives;
+            if (gameOver) {
+                ctx.fillStyle = '#fff';
+                ctx.font = '40px Arial';
+                ctx.fillText('GAME OVER', 300, 300);
+            }
+        }
+
+        function drawSprite(ctx, sprite, x, y, scale, color) {
+            ctx.fillStyle = color;
+            const pixelSize = scale;
+            for (let py = 0; py < sprite.length; py++) {
+                for (let px = 0; px < sprite[py].length; px++) {
+                    if (sprite[py][px]) ctx.fillRect(x + px * pixelSize, y + py * pixelSize, pixelSize, pixelSize);
+                }
+            }
+        }
+
+        function endGame() {
+            localStorage.setItem('galagaHighScore', Math.max(score, localStorage.getItem('galagaHighScore') || 0));
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+        gameLoop();
+    </script>
+</body>
+</html>
