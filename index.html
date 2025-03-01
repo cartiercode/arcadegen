@@ -83,8 +83,9 @@
         // Constants
         const SCALE = 2;
         const TILE_SIZE = 16 * SCALE;
+        const MAX_BULLETS = 10; // Limit to prevent overload
 
-        // Sprites (from Spriters Resource, adapted)
+        // Sprites
         const playerSprite = [
             [0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0],
             [0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0],
@@ -193,8 +194,9 @@
         let score = 0, gameOver = false, frameCount = 0, stage = 1, tractorBeam = null;
         let entrancePhase = true, entranceFrame = 0;
 
-        // Enemy formations (Galaga stage 1 pattern)
+        // Spawn enemies
         function spawnEnemies() {
+            console.log('Spawning enemies for stage', stage);
             const formation = [
                 { type: 'boss', x: 4, y: 0, escorts: 2 },
                 { type: 'boss', x: 5, y: 0, escorts: 2 },
@@ -257,17 +259,18 @@
         shootBtn.addEventListener('touchstart', e => { e.preventDefault(); if (!gameOver && !entrancePhase) shoot(); });
 
         function shoot() {
-            if (player.captured) return;
+            if (player.captured || bullets.length >= MAX_BULLETS) return;
             bullets.push({ x: player.x + player.width / 2 - 2, y: player.y, width: 4, height: 12, speed: -8, player: true });
             if (player.dual) {
                 bullets.push({ x: player.x + player.width / 2 - 2 + TILE_SIZE, y: player.y, width: 4, height: 12, speed: -8, player: true });
             }
-            console.log('Sound: Shoot'); // Placeholder for audio
+            console.log('Sound: Shoot');
         }
 
         function update() {
             if (gameOver) return;
             frameCount++;
+            console.log('Frame:', frameCount, 'Enemies:', enemies.length, 'Bullets:', bullets.length);
 
             // Player movement
             if (!player.captured) {
@@ -276,16 +279,16 @@
             }
 
             // Bullets
-            bullets.forEach((b, i) => {
-                b.y += b.speed;
-                if (b.y < 0 || b.y > 768) bullets.splice(bi, 1);
-            });
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                bullets[i].y += bullets[i].speed;
+                if (bullets[i].y < 0 || bullets[i].y > 768) bullets.splice(i, 1);
+            }
 
             // Entrance phase
             if (entrancePhase) {
                 entranceFrame++;
-                const aliveEnemies = enemies.filter(e => e.alive);
-                aliveEnemies.forEach(e => {
+                let allEntered = true;
+                enemies.forEach(e => {
                     if (e.state === 'entering') {
                         const t = entranceFrame / 60 + e.entranceIndex * 0.2;
                         e.x = 256 + Math.sin(t) * 300 - TILE_SIZE / 2;
@@ -294,33 +297,43 @@
                             e.x = e.baseX;
                             e.y = e.baseY;
                             e.state = 'formation';
+                        } else {
+                            allEntered = false;
                         }
                     }
                 });
-                if (aliveEnemies.every(e => e.state !== 'entering')) entrancePhase = false;
+                if (allEntered) {
+                    entrancePhase = false;
+                    console.log('Entrance phase complete');
+                }
                 return;
             }
 
             // Enemies
             const aliveEnemies = enemies.filter(e => e.alive);
             if (frameCount % 60 === 0 && !tractorBeam) {
-                const swooper = aliveEnemies.filter(e => e.type !== 'boss' || e.escorts === 0)[Math.floor(Math.random() * aliveEnemies.length)];
-                if (swooper && swooper.state === 'formation' && Math.random() < 0.05 + stage * 0.01) {
-                    swooper.state = 'swooping';
-                    swooper.swoopPath = [
-                        { x: swooper.x + (Math.random() > 0.5 ? 100 : -100), y: swooper.y + 150 },
-                        { x: player.x + Math.random() * 100 - 50, y: 600 },
-                        { x: swooper.baseX, y: swooper.baseY }
-                    ];
-                    swooper.pathIndex = 0;
+                const swoopers = aliveEnemies.filter(e => e.type !== 'boss' || e.escorts === 0);
+                if (swoopers.length > 0) {
+                    const swooper = swoopers[Math.floor(Math.random() * swoopers.length)];
+                    if (swooper.state === 'formation' && Math.random() < 0.05 + stage * 0.01) {
+                        swooper.state = 'swooping';
+                        swooper.swoopPath = [
+                            { x: swooper.x + (Math.random() > 0.5 ? 100 : -100), y: swooper.y + 150 },
+                            { x: player.x + Math.random() * 100 - 50, y: 600 },
+                            { x: swooper.baseX, y: swooper.baseY }
+                        ];
+                        swooper.pathIndex = 0;
+                        console.log('Enemy swooping');
+                    }
                 }
             }
 
-            enemies.forEach(e => {
-                if (!e.alive) return;
+            for (let i = 0; i < enemies.length; i++) {
+                const e = enemies[i];
+                if (!e.alive) continue;
                 if (e.state === 'formation') {
                     e.frame = (frameCount % 20 < 10) ? 0 : 1;
-                    e.x = e.baseX + Math.sin(frameCount / 30) * 5; // Wiggle
+                    e.x = e.baseX + Math.sin(frameCount / 30) * 5;
                 } else if (e.state === 'swooping') {
                     const target = e.swoopPath[e.pathIndex];
                     const dx = target.x - e.x;
@@ -356,7 +369,7 @@
                         }
                     }
                 }
-            });
+            }
 
             // Tractor beam
             if (tractorBeam) {
@@ -375,8 +388,10 @@
             }
 
             // Collisions
-            bullets.forEach((b, bi) => {
-                enemies.forEach((e, ei) => {
+            for (let bi = bullets.length - 1; bi >= 0; bi--) {
+                const b = bullets[bi];
+                for (let ei = enemies.length - 1; ei >= 0; ei--) {
+                    const e = enemies[ei];
                     if (e.alive && b.player && b.x < e.x + e.width && b.x + b.width > e.x && b.y < e.y + e.height && b.y + b.height > e.y) {
                         e.alive = false;
                         bullets.splice(bi, 1);
@@ -392,26 +407,26 @@
                                 player.captured = false;
                                 player.dual = true;
                                 player.x -= TILE_SIZE / 2;
-                                score += 1000; // Bonus for rescue
+                                score += 1000;
                                 console.log('Sound: Rescue');
                             }
                         }
+                        break; // Exit inner loop after hit
                     }
-                });
-            });
+                }
+            }
 
             // Explosions
-            explosions.forEach((e, i) => {
-                e.timer--;
-                if (e.timer <= 0) explosions.splice(i, 1);
-            });
+            for (let i = explosions.length - 1; i >= 0; i--) {
+                explosions[i].timer--;
+                if (explosions[i].timer <= 0) explosions.splice(i, 1);
+            }
 
             // Stage progression
             if (aliveEnemies.length === 0) {
                 stage++;
                 document.getElementById('stage').innerText = 'STAGE ' + stage;
                 if (stage % 3 === 0) {
-                    // Challenge stage (simplified)
                     for (let i = 0; i < 20; i++) {
                         enemies.push({
                             x: -TILE_SIZE,
@@ -432,6 +447,7 @@
                 } else {
                     spawnEnemies();
                 }
+                console.log('Sound: Stage Clear');
             } else if (player.lives <= 0) {
                 gameOver = true;
                 console.log('Sound: Game Over');
