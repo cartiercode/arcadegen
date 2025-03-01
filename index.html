@@ -53,6 +53,14 @@
             padding: 0 20px;
             box-sizing: border-box;
         }
+        #stage {
+            position: absolute;
+            top: 40px;
+            width: 100%;
+            max-width: 512px;
+            color: white;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
@@ -60,6 +68,7 @@
         <span id="score">SCORE: 0</span>
         <span id="lives">LIVES: 3</span>
     </div>
+    <div id="stage">STAGE 1</div>
     <canvas id="gameCanvas" width="512" height="768"></canvas>
     <div id="controls">
         <button id="leftBtn">Left</button>
@@ -75,7 +84,7 @@
         const SCALE = 2;
         const TILE_SIZE = 16 * SCALE;
 
-        // Player sprite (Galaga fighter)
+        // Sprites (from Spriters Resource, adapted)
         const playerSprite = [
             [0,0,0,0,0,0,0,1,1,0,0,0,0,0,0,0],
             [0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0],
@@ -87,8 +96,7 @@
             [1,1,0,0,0,0,0,1,1,0,0,0,0,0,1,1]
         ];
 
-        // Enemy sprite (Bee-like enemy, two frames)
-        const enemySprite = [
+        const beeSprite = [
             [
                 [0,0,0,0,0,1,1,0,0,0,0,0],
                 [0,0,0,0,1,1,1,1,0,0,0,0],
@@ -111,6 +119,63 @@
             ]
         ];
 
+        const butterflySprite = [
+            [
+                [0,0,0,1,0,0,0,0,1,0,0,0],
+                [0,0,0,0,1,0,0,1,0,0,0,0],
+                [0,0,0,1,1,1,1,1,1,0,0,0],
+                [0,0,1,1,1,1,1,1,1,1,0,0],
+                [0,1,1,0,1,1,1,1,0,1,1,0],
+                [0,1,0,0,0,1,1,0,0,0,1,0],
+                [0,0,1,0,0,0,0,0,0,1,0,0],
+                [0,0,0,1,0,0,0,0,1,0,0,0]
+            ],
+            [
+                [0,0,0,0,0,0,0,0,0,0,0,0],
+                [0,0,0,1,0,0,0,0,1,0,0,0],
+                [0,0,1,1,1,0,0,1,1,1,0,0],
+                [0,1,1,1,1,1,1,1,1,1,1,0],
+                [0,1,0,0,1,1,1,1,0,0,1,0],
+                [0,0,1,0,0,1,1,0,0,1,0,0],
+                [0,0,0,1,0,0,0,0,1,0,0,0],
+                [0,0,0,0,1,0,0,1,0,0,0,0]
+            ]
+        ];
+
+        const bossSprite = [
+            [
+                [0,0,0,0,1,1,1,1,0,0,0,0],
+                [0,0,1,1,1,1,1,1,1,1,0,0],
+                [0,1,1,1,1,1,1,1,1,1,1,0],
+                [1,1,0,1,1,0,0,1,1,0,1,1],
+                [1,1,1,1,1,1,1,1,1,1,1,1],
+                [0,0,1,0,0,1,1,0,0,1,0,0],
+                [0,1,0,0,1,0,0,1,0,0,1,0],
+                [1,0,0,1,0,0,0,0,1,0,0,1]
+            ],
+            [
+                [0,0,0,0,1,1,1,1,0,0,0,0],
+                [0,0,1,1,1,1,1,1,1,1,0,0],
+                [0,1,1,1,1,1,1,1,1,1,1,0],
+                [1,1,0,1,1,0,0,1,1,0,1,1],
+                [1,1,1,1,1,1,1,1,1,1,1,1],
+                [0,0,0,1,1,0,0,1,1,0,0,0],
+                [0,0,1,0,0,1,1,0,0,1,0,0],
+                [0,1,0,0,0,0,0,0,0,0,1,0]
+            ]
+        ];
+
+        const explosionSprite = [
+            [0,1,0,0,1,0,0,0,1,0,0,1],
+            [1,0,1,0,0,1,0,1,0,0,1,0],
+            [0,1,0,1,0,0,1,0,0,1,0,1],
+            [0,0,1,0,1,0,0,1,0,1,0,0],
+            [1,0,0,1,0,0,1,0,1,0,0,1],
+            [0,1,0,0,1,0,0,1,0,0,1,0],
+            [0,0,1,0,0,1,0,0,1,0,1,0],
+            [1,0,0,1,0,0,1,0,0,1,0,1]
+        ];
+
         // Game objects
         const player = {
             x: 256 - TILE_SIZE,
@@ -124,46 +189,60 @@
         };
         const bullets = [];
         const enemies = [];
-        let score = 0;
-        let gameOver = false;
-        let frameCount = 0;
-        let tractorBeam = null;
+        const explosions = [];
+        let score = 0, gameOver = false, frameCount = 0, stage = 1, tractorBeam = null;
+        let entrancePhase = true, entranceFrame = 0;
 
-        // Spawn enemies in Galaga formation
+        // Enemy formations (Galaga stage 1 pattern)
         function spawnEnemies() {
             const formation = [
-                [0, 1, 1, 0, 0, 1, 1, 0],
-                [1, 1, 1, 1, 1, 1, 1, 1],
-                [1, 1, 1, 1, 1, 1, 1, 1],
-                [0, 1, 1, 1, 1, 1, 1, 0]
+                { type: 'boss', x: 4, y: 0, escorts: 2 },
+                { type: 'boss', x: 5, y: 0, escorts: 2 },
+                { type: 'butterfly', x: 2, y: 1 },
+                { type: 'butterfly', x: 3, y: 1 },
+                { type: 'butterfly', x: 6, y: 1 },
+                { type: 'butterfly', x: 7, y: 1 },
+                { type: 'bee', x: 0, y: 2 },
+                { type: 'bee', x: 1, y: 2 },
+                { type: 'bee', x: 2, y: 2 },
+                { type: 'bee', x: 3, y: 2 },
+                { type: 'bee', x: 6, y: 2 },
+                { type: 'bee', x: 7, y: 2 },
+                { type: 'bee', x: 0, y: 3 },
+                { type: 'bee', x: 1, y: 3 },
+                { type: 'bee', x: 2, y: 3 },
+                { type: 'bee', x: 3, y: 3 },
+                { type: 'bee', x: 6, y: 3 },
+                { type: 'bee', x: 7, y: 3 }
             ];
-            for (let row = 0; row < 4; row++) {
-                for (let col = 0; col < 8; col++) {
-                    if (formation[row][col]) {
-                        enemies.push({
-                            x: 128 + col * TILE_SIZE * 1.5,
-                            y: 100 + row * TILE_SIZE * 1.5,
-                            width: TILE_SIZE,
-                            height: TILE_SIZE,
-                            alive: true,
-                            frame: 0,
-                            state: 'formation',
-                            swoopPath: [],
-                            speed: 3,
-                            baseX: 128 + col * TILE_SIZE * 1.5,
-                            baseY: 100 + row * TILE_SIZE * 1.5
-                        });
-                    }
-                }
-            }
+            formation.forEach((e, i) => {
+                enemies.push({
+                    x: -TILE_SIZE,
+                    y: -TILE_SIZE,
+                    width: TILE_SIZE,
+                    height: TILE_SIZE,
+                    alive: true,
+                    type: e.type,
+                    frame: 0,
+                    state: 'entering',
+                    baseX: 128 + e.x * TILE_SIZE * 1.5,
+                    baseY: 100 + e.y * TILE_SIZE * 1.5,
+                    swoopPath: [],
+                    speed: 3,
+                    escorts: e.escorts || 0,
+                    entranceIndex: i
+                });
+            });
+            entrancePhase = true;
+            entranceFrame = 0;
         }
         spawnEnemies();
 
-        // Input handling
+        // Input
         let keys = {};
         document.addEventListener('keydown', e => {
             keys[e.key] = true;
-            if (e.key === ' ' && !gameOver) shoot();
+            if (e.key === ' ' && !gameOver && !entrancePhase) shoot();
         });
         document.addEventListener('keyup', e => delete keys[e.key]);
 
@@ -175,7 +254,7 @@
         leftBtn.addEventListener('touchend', e => { e.preventDefault(); delete keys['ArrowLeft']; });
         rightBtn.addEventListener('touchstart', e => { e.preventDefault(); keys['ArrowRight'] = true; });
         rightBtn.addEventListener('touchend', e => { e.preventDefault(); delete keys['ArrowRight']; });
-        shootBtn.addEventListener('touchstart', e => { e.preventDefault(); shoot(); });
+        shootBtn.addEventListener('touchstart', e => { e.preventDefault(); if (!gameOver && !entrancePhase) shoot(); });
 
         function shoot() {
             if (player.captured) return;
@@ -183,6 +262,7 @@
             if (player.dual) {
                 bullets.push({ x: player.x + player.width / 2 - 2 + TILE_SIZE, y: player.y, width: 4, height: 12, speed: -8, player: true });
             }
+            console.log('Sound: Shoot'); // Placeholder for audio
         }
 
         function update() {
@@ -198,18 +278,38 @@
             // Bullets
             bullets.forEach((b, i) => {
                 b.y += b.speed;
-                if (b.y < 0 || b.y > 768) bullets.splice(i, 1);
+                if (b.y < 0 || b.y > 768) bullets.splice(bi, 1);
             });
+
+            // Entrance phase
+            if (entrancePhase) {
+                entranceFrame++;
+                const aliveEnemies = enemies.filter(e => e.alive);
+                aliveEnemies.forEach(e => {
+                    if (e.state === 'entering') {
+                        const t = entranceFrame / 60 + e.entranceIndex * 0.2;
+                        e.x = 256 + Math.sin(t) * 300 - TILE_SIZE / 2;
+                        e.y = -TILE_SIZE + t * 400;
+                        if (e.y >= e.baseY) {
+                            e.x = e.baseX;
+                            e.y = e.baseY;
+                            e.state = 'formation';
+                        }
+                    }
+                });
+                if (aliveEnemies.every(e => e.state !== 'entering')) entrancePhase = false;
+                return;
+            }
 
             // Enemies
             const aliveEnemies = enemies.filter(e => e.alive);
             if (frameCount % 60 === 0 && !tractorBeam) {
-                const swooper = aliveEnemies[Math.floor(Math.random() * aliveEnemies.length)];
-                if (swooper && swooper.state === 'formation' && Math.random() < 0.1) {
+                const swooper = aliveEnemies.filter(e => e.type !== 'boss' || e.escorts === 0)[Math.floor(Math.random() * aliveEnemies.length)];
+                if (swooper && swooper.state === 'formation' && Math.random() < 0.05 + stage * 0.01) {
                     swooper.state = 'swooping';
                     swooper.swoopPath = [
-                        { x: swooper.x, y: swooper.y + 100 },
-                        { x: player.x, y: 600 },
+                        { x: swooper.x + (Math.random() > 0.5 ? 100 : -100), y: swooper.y + 150 },
+                        { x: player.x + Math.random() * 100 - 50, y: 600 },
                         { x: swooper.baseX, y: swooper.baseY }
                     ];
                     swooper.pathIndex = 0;
@@ -220,6 +320,7 @@
                 if (!e.alive) return;
                 if (e.state === 'formation') {
                     e.frame = (frameCount % 20 < 10) ? 0 : 1;
+                    e.x = e.baseX + Math.sin(frameCount / 30) * 5; // Wiggle
                 } else if (e.state === 'swooping') {
                     const target = e.swoopPath[e.pathIndex];
                     const dx = target.x - e.x;
@@ -234,9 +335,10 @@
                         e.pathIndex++;
                         if (e.pathIndex >= e.swoopPath.length) {
                             e.state = 'formation';
-                        } else if (e.pathIndex === 1 && Math.random() < 0.2 && !player.captured && !player.dual) {
+                        } else if (e.pathIndex === 1 && e.type === 'boss' && Math.random() < 0.3 && !player.captured && !player.dual) {
                             tractorBeam = { enemy: e, y: e.y, height: player.y - e.y };
                             e.state = 'tractoring';
+                            console.log('Sound: Tractor Beam');
                         }
                     }
                     e.frame = (frameCount % 10 < 5) ? 0 : 1;
@@ -250,18 +352,21 @@
                             player.captured = false;
                             player.x = 256 - TILE_SIZE;
                             player.y = 768 - TILE_SIZE * 2;
+                            console.log('Sound: Player Lost');
                         }
                     }
                 }
             });
 
-            // Tractor beam logic
+            // Tractor beam
             if (tractorBeam) {
+                tractorBeam.height = player.y - tractorBeam.enemy.y;
                 if (!player.captured && tractorBeam.y + tractorBeam.height > player.y &&
                     player.x + player.width > tractorBeam.enemy.x && player.x < tractorBeam.enemy.x + TILE_SIZE) {
                     player.captured = true;
                     player.x = tractorBeam.enemy.x;
                     player.y = tractorBeam.enemy.y + TILE_SIZE;
+                    console.log('Sound: Capture');
                 }
                 if (player.captured) {
                     player.x = tractorBeam.enemy.x;
@@ -275,23 +380,61 @@
                     if (e.alive && b.player && b.x < e.x + e.width && b.x + b.width > e.x && b.y < e.y + e.height && b.y + b.height > e.y) {
                         e.alive = false;
                         bullets.splice(bi, 1);
-                        score += 50;
+                        explosions.push({ x: e.x, y: e.y, timer: 20 });
+                        console.log('Sound: Explosion');
+                        let points = e.type === 'bee' ? (e.state === 'formation' ? 50 : 100) :
+                                     e.type === 'butterfly' ? (e.state === 'formation' ? 80 : 160) :
+                                     (e.escorts === 2 ? 800 : e.escorts === 1 ? 400 : 150);
+                        score += points;
                         if (e === tractorBeam?.enemy) {
                             tractorBeam = null;
                             if (player.captured) {
                                 player.captured = false;
                                 player.dual = true;
                                 player.x -= TILE_SIZE / 2;
+                                score += 1000; // Bonus for rescue
+                                console.log('Sound: Rescue');
                             }
                         }
                     }
                 });
             });
 
+            // Explosions
+            explosions.forEach((e, i) => {
+                e.timer--;
+                if (e.timer <= 0) explosions.splice(i, 1);
+            });
+
+            // Stage progression
             if (aliveEnemies.length === 0) {
-                spawnEnemies();
+                stage++;
+                document.getElementById('stage').innerText = 'STAGE ' + stage;
+                if (stage % 3 === 0) {
+                    // Challenge stage (simplified)
+                    for (let i = 0; i < 20; i++) {
+                        enemies.push({
+                            x: -TILE_SIZE,
+                            y: -TILE_SIZE,
+                            width: TILE_SIZE,
+                            height: TILE_SIZE,
+                            alive: true,
+                            type: 'bee',
+                            frame: 0,
+                            state: 'entering',
+                            baseX: 128 + (i % 10) * TILE_SIZE * 1.5,
+                            baseY: 100 + Math.floor(i / 10) * TILE_SIZE * 1.5,
+                            swoopPath: [],
+                            speed: 3,
+                            entranceIndex: i
+                        });
+                    }
+                } else {
+                    spawnEnemies();
+                }
             } else if (player.lives <= 0) {
                 gameOver = true;
+                console.log('Sound: Game Over');
             }
         }
 
@@ -311,7 +454,10 @@
 
             // Enemies
             enemies.forEach(e => {
-                if (e.alive) drawSprite(enemySprite[e.frame], e.x, e.y, SCALE, '#ff0');
+                if (e.alive) {
+                    const sprite = e.type === 'bee' ? beeSprite : e.type === 'butterfly' ? butterflySprite : bossSprite;
+                    drawSprite(sprite[e.frame], e.x, e.y, SCALE, e.type === 'bee' ? '#ff0' : e.type === 'butterfly' ? '#0ff' : '#f00');
+                }
             });
 
             // Tractor beam
@@ -319,6 +465,9 @@
                 ctx.fillStyle = 'rgba(0, 255, 0, 0.5)';
                 ctx.fillRect(tractorBeam.enemy.x + TILE_SIZE / 4, tractorBeam.y, TILE_SIZE / 2, tractorBeam.height);
             }
+
+            // Explosions
+            explosions.forEach(e => drawSprite(explosionSprite, e.x, e.y, SCALE, '#f00'));
 
             // HUD
             document.getElementById('score').innerText = 'SCORE: ' + score;
@@ -336,7 +485,7 @@
             const pixelSize = scale;
             for (let py = 0; py < sprite.length; py++) {
                 for (let px = 0; px < sprite[py].length; px++) {
-                    if (sprite[py][px]) ctx.fillRect(x + px * pixelSize, y + py * pixelSize, pixelSize, pixelSize);
+                    if (sprite[py][px]) ctx.fillRect(Math.round(x) + px * pixelSize, Math.round(y) + py * pixelSize, pixelSize, pixelSize);
                 }
             }
         }
@@ -346,6 +495,7 @@
             draw();
             requestAnimationFrame(gameLoop);
         }
+        console.log('Sound: Stage Start');
         gameLoop();
     </script>
 </body>
